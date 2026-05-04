@@ -30,6 +30,7 @@ import org.bukkit.event.player.*;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.components.CustomModelDataComponent;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
@@ -86,24 +87,40 @@ public class SlimeListener implements Listener {
         for (final var itemStack : player.getInventory()) updateSlime(itemStack, changeToActive, player);
     }
 
+    private String getCmdString(ItemMeta meta) {
+        List<String> strings = meta.getCustomModelDataComponent().getStrings();
+        return strings.isEmpty() ? null : strings.get(0);
+    }
+
+    private void setCmdString(ItemMeta meta, String value) {
+        CustomModelDataComponent component = meta.getCustomModelDataComponent();
+        component.setStrings(value == null ? List.of() : List.of(value));
+        meta.setCustomModelDataComponent(component);
+    }
+
+    private boolean hasCmdString(ItemMeta meta) {
+        return !meta.getCustomModelDataComponent().getStrings().isEmpty();
+    }
+
     private <E extends Entity & Sound.Emitter> void updateSlime(
         final @Nullable ItemStack itemStack,
         final boolean changeToActive,
         final @NotNull E soundEmitter
     ) {
         if (itemStack == null || itemStack.getType() != SLIME_BUCKET_MATERIAL ||
-            !itemStack.hasItemMeta() || !Objects.requireNonNull(itemStack.getItemMeta()).hasCustomModelData())
-            return;
+            !itemStack.hasItemMeta()) return;
 
         final var itemMeta = itemStack.getItemMeta();
-        debugLog.accept("updateSlimes: CMD = " + itemMeta.getCustomModelData());
+        if (!hasCmdString(itemMeta)) return;
 
-        if (changeToActive && itemMeta.getCustomModelData() == config.getCalmSlimeCmd()) {
-            itemMeta.setCustomModelData(config.getActiveSlimeCmd());
+        final var cmd = getCmdString(itemMeta);
+        debugLog.accept("updateSlimes: CMD = " + cmd);
 
+        if (changeToActive && config.getCalmSlimeCmd().equals(cmd)) {
+            setCmdString(itemMeta, config.getActiveSlimeCmd());
             scheduleSoundTask(soundEmitter);
-        } else if (!changeToActive && itemMeta.getCustomModelData() == config.getActiveSlimeCmd()) {
-            itemMeta.setCustomModelData(config.getCalmSlimeCmd());
+        } else if (!changeToActive && config.getActiveSlimeCmd().equals(cmd)) {
+            setCmdString(itemMeta, config.getCalmSlimeCmd());
             final @Nullable BukkitTask task = soundPlayTasks.remove(soundEmitter.getUniqueId());
             if (task != null) {
                 task.cancel();
@@ -111,7 +128,7 @@ public class SlimeListener implements Listener {
             }
         }
 
-        debugLog.accept("updateSlimes: new CMD = " + itemMeta.getCustomModelData());
+        debugLog.accept("updateSlimes: new CMD = " + getCmdString(itemMeta));
         itemStack.setItemMeta(itemMeta);
     }
 
@@ -131,10 +148,9 @@ public class SlimeListener implements Listener {
                                 this.cancel();
                                 return;
                             }
-
                             var sound = frames
                                 .get(frame.getAndUpdate(i -> (i + 1) % frames.size()))
-                                .map(org.bukkit.Sound::key);
+                                .map(s -> Key.key(s.getKey().toString()));
                             sound.ifPresent(key -> playSlimeSound(key, soundEmitter));
                         }
                     }, 0L, config.getAnimationFrametime()
@@ -144,7 +160,7 @@ public class SlimeListener implements Listener {
             }
             case ONCE -> {
                 final List<Optional<org.bukkit.Sound>> frames = config.getAnimationFrames();
-                final var sound = frames.get(0).map(org.bukkit.Sound::key);
+                final var sound = frames.get(0).map(s -> Key.key(s.getKey().toString()));
                 sound.ifPresent(key -> {
                     playSlimeSound(key, soundEmitter);
                     debugLog.accept("updateSlimes: Slime sound was played once");
@@ -157,7 +173,7 @@ public class SlimeListener implements Listener {
         Bukkit.getServer().filterAudience(it -> {
             if (!(it instanceof Player player)) return false;
             return player.getWorld().equals(soundEmitter.getWorld()) &&
-                   player.getLocation().distance(soundEmitter.getLocation()) < 16 * 2; // 2 chunks
+                   player.getLocation().distance(soundEmitter.getLocation()) < 16 * 2;
         }).playSound(
             Sound.sound(
                 sound,
@@ -197,7 +213,7 @@ public class SlimeListener implements Listener {
             ? itemStack.getItemMeta()
             : new ItemStack(SLIME_BUCKET_MATERIAL).getItemMeta();
         assert itemMeta != null;
-        if (itemMeta.hasCustomModelData()) return;
+        if (hasCmdString(itemMeta)) return;
 
         pickupSlime(slime, player, itemStack, itemMeta, event.getHand());
     }
@@ -215,11 +231,11 @@ public class SlimeListener implements Listener {
         slime.remove();
         final var slimeBucketStack = bucketStack.clone();
         slimeBucketStack.setAmount(1);
-        slimeBucketMeta.setCustomModelData(
-            player.getLocation().getChunk().isSlimeChunk()
-                ? config.getActiveSlimeCmd()
-                : config.getCalmSlimeCmd()
-        );
+
+        setCmdString(slimeBucketMeta, player.getLocation().getChunk().isSlimeChunk()
+            ? config.getActiveSlimeCmd()
+            : config.getCalmSlimeCmd());
+
         if (slime.customName() != null) slimeBucketMeta.displayName(slime.customName());
         else slimeBucketMeta.displayName(
             slimeBucketMeta.hasDisplayName()
@@ -240,7 +256,6 @@ public class SlimeListener implements Listener {
             });
         } else player.getInventory().setItem(bucketStackSlot, slimeBucketStack);
 
-        // play hand swing animation
         if (bucketStackSlot == EquipmentSlot.HAND) player.swingMainHand();
         else player.swingOffHand();
 
@@ -266,9 +281,10 @@ public class SlimeListener implements Listener {
 
         final ItemMeta itemMeta = itemStack.getItemMeta();
         assert itemMeta != null;
-        if (!itemMeta.hasCustomModelData() ||
-            (itemMeta.getCustomModelData() != config.getCalmSlimeCmd() &&
-             itemMeta.getCustomModelData() != config.getActiveSlimeCmd())) return;
+
+        final String cmd = getCmdString(itemMeta);
+        if (cmd == null ||
+            (!cmd.equals(config.getCalmSlimeCmd()) && !cmd.equals(config.getActiveSlimeCmd()))) return;
 
         placeSlime(event, player, itemStack);
     }
@@ -300,7 +316,7 @@ public class SlimeListener implements Listener {
         event.setUseInteractedBlock(Event.Result.DENY);
 
         final Block block = event.getClickedBlock();
-        assert block != null; // because the event.action is RIGHT_CLICK_BLOCK
+        assert block != null;
         final BlockFace blockFace = event.getBlockFace();
 
         final Location slimeReleaseLocation = block.getLocation()
@@ -312,7 +328,6 @@ public class SlimeListener implements Listener {
             slimeReleaseLocation, Slime.class, slime -> {
                 slime.setSize(1);
                 final var serializer = PlainTextComponentSerializer.plainText();
-
                 ISUtil.useDisplayName(
                     itemMeta, displayName -> {
                         if (!serializer.serialize(displayName)
@@ -324,7 +339,7 @@ public class SlimeListener implements Listener {
             }
         );
 
-        itemMeta.setCustomModelData(null);
+        setCmdString(itemMeta, null);
         itemMeta.displayName(null);
         persistentContainerAccessor.removeSlimeBucketUUID(itemMeta);
         itemStack.setItemMeta(itemMeta);
@@ -348,19 +363,16 @@ public class SlimeListener implements Listener {
                 if (itemStack == null || itemStack.getType() != SLIME_BUCKET_MATERIAL || !itemStack.hasItemMeta()) {
                     return Option.none();
                 }
-
                 final ItemMeta itemMeta = itemStack.getItemMeta();
-                return itemMeta.hasCustomModelData() &&
-                       (itemMeta.getCustomModelData() == config.getCalmSlimeCmd() ||
-                        itemMeta.getCustomModelData() == config.getActiveSlimeCmd())
+                final String cmd = getCmdString(itemMeta);
+                return cmd != null &&
+                       (cmd.equals(config.getCalmSlimeCmd()) || cmd.equals(config.getActiveSlimeCmd()))
                     ? Option.some(itemStackIndexed)
                     : Option.none();
             })
             .forEach(itemStackIndexed -> {
                 final ItemStack itemStack = itemStackIndexed.value();
-                slotsAndStacksToReplaceWithSlimeBucket.put(
-                    itemStackIndexed.index(), itemStack.clone()
-                );
+                slotsAndStacksToReplaceWithSlimeBucket.put(itemStackIndexed.index(), itemStack.clone());
             });
 
         scheduler.runTaskLater(
@@ -370,7 +382,7 @@ public class SlimeListener implements Listener {
                     clonedBucket.setType(Material.BUCKET);
                     final ItemMeta clonedBucketMeta = clonedBucket.getItemMeta();
                     assert clonedBucketMeta != null;
-                    clonedBucketMeta.setCustomModelData(null);
+                    setCmdString(clonedBucketMeta, null);
                     clonedBucketMeta.displayName(null);
                     persistentContainerAccessor.removeSlimeBucketUUID(clonedBucketMeta);
                     clonedBucket.setItemMeta(clonedBucketMeta);
@@ -395,10 +407,10 @@ public class SlimeListener implements Listener {
         final ItemMeta itemMeta = itemStack.getItemMeta();
         assert itemMeta != null;
 
-        if (!itemMeta.hasCustomModelData()) return;
-        final int cmd = itemMeta.getCustomModelData();
+        if (!hasCmdString(itemMeta)) return;
+        final String cmd = getCmdString(itemMeta);
 
-        if (cmd != config.getCalmSlimeCmd() && cmd != config.getActiveSlimeCmd()) return;
+        if (!config.getCalmSlimeCmd().equals(cmd) && !config.getActiveSlimeCmd().equals(cmd)) return;
 
         lastItemChunks.put(itemDrop, itemDrop.getLocation().getChunk());
         final BukkitTask soundPlayTask = soundPlayTasks.remove(event.getPlayer().getUniqueId());
