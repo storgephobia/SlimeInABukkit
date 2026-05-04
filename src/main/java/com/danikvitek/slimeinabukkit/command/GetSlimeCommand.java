@@ -12,6 +12,7 @@ import org.bukkit.command.defaults.BukkitCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.components.CustomModelDataComponent;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -20,6 +21,8 @@ import java.util.UUID;
 import static com.danikvitek.slimeinabukkit.SlimeInABukkitPlugin.SLIME_BUCKET_MATERIAL;
 
 public class GetSlimeCommand extends BukkitCommand {
+    private static final String PERMISSION = "slimeinabukkit.command.get_slime";
+
     private final @NotNull PluginConfig config;
     private final @NotNull PersistentContainerAccessor persistentContainerAccessor;
 
@@ -35,6 +38,7 @@ public class GetSlimeCommand extends BukkitCommand {
         );
         this.config = config;
         this.persistentContainerAccessor = persistentContainerAccessor;
+        setPermission(PERMISSION);
     }
 
     @Override
@@ -52,19 +56,26 @@ public class GetSlimeCommand extends BukkitCommand {
             sender.sendMessage(Component.text("Command can only be used by a player", NamedTextColor.RED));
             return;
         }
+        if (!player.hasPermission(PERMISSION)) {
+            player.sendMessage(Component.text("You don't have permission to use this command", NamedTextColor.RED));
+            return;
+        }
 
         final ItemStack slimeBucket = new ItemStack(SLIME_BUCKET_MATERIAL);
         final ItemMeta slimeBucketMeta = slimeBucket.getItemMeta();
         assert slimeBucketMeta != null;
+
         final Location location = player.getLocation();
-        slimeBucketMeta.setCustomModelData(location.getChunk()
-            .isSlimeChunk() ? config.getActiveSlimeCmd() : config.getCalmSlimeCmd());
+        final String cmd = location.getChunk().isSlimeChunk()
+            ? config.getActiveSlimeCmd()
+            : config.getCalmSlimeCmd();
+
+        final CustomModelDataComponent component = slimeBucketMeta.getCustomModelDataComponent();
+        component.setStrings(List.of(cmd));
+        slimeBucketMeta.setCustomModelDataComponent(component);
 
         slimeBucketMeta.displayName(config.getSlimeBucketTitle());
-        persistentContainerAccessor.setSlimeBucketUUID(
-            slimeBucketMeta,
-            UUID.randomUUID()
-        ); // for it to be not stackable
+        persistentContainerAccessor.setSlimeBucketUUID(slimeBucketMeta, UUID.randomUUID());
         slimeBucket.setItemMeta(slimeBucketMeta);
 
         final World world = player.getWorld();
