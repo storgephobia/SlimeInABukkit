@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 
 public class SlimeChunkCommand extends BukkitCommand {
+
     private final @NotNull ChunkMessageResolver messageResolver;
 
     public SlimeChunkCommand(@NotNull ChunkMessageResolver messageResolver) {
@@ -21,6 +22,8 @@ public class SlimeChunkCommand extends BukkitCommand {
             List.of()
         );
         this.messageResolver = messageResolver;
+        setPermission("slimeinabukkit.command.slime_chunk");
+        setPermissionMessage("§cYou don't have permission to use this command.");
     }
 
     @Override
@@ -37,6 +40,14 @@ public class SlimeChunkCommand extends BukkitCommand {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Component.text(
                 "Command can only be used by a player",
+                NamedTextColor.RED
+            ));
+            return;
+        }
+
+        if (!player.hasPermission("slimeinabukkit.command.slime_chunk")) {
+            player.sendMessage(Component.text(
+                "You don't have permission to use this command",
                 NamedTextColor.RED
             ));
             return;
