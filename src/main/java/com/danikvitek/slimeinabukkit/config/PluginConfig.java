@@ -2,16 +2,19 @@ package com.danikvitek.slimeinabukkit.config;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import org.bukkit.Registry;
+import org.bukkit.NamespacedKey;
 import org.bukkit.Sound;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 public class PluginConfig {
-    public static final String CHUNK_STATUS_PLACEHOLDER = "<chunk-status>";
+    public static final String CHUNK_STATUS_PLACEHOLDER = "chunk-status";
 
     // config start
 
@@ -22,16 +25,16 @@ public class PluginConfig {
     );
 
     private static final String CALM_SLIME_CMD_PATH = CMD_PATH + ".calm-slime";
-    private static final int CALM_SLIME_CMD_DEFAULT = 404;
+    private static final String CALM_SLIME_CMD_DEFAULT = "calm";
     private static final List<String> CALM_SLIME_CMD_COMMENTS = List.of("Default: " + CALM_SLIME_CMD_DEFAULT);
 
     private static final String ACTIVE_SLIME_CMD_PATH = CMD_PATH + ".active-slime";
-    private static final int ACTIVE_SLIME_CMD_DEFAULT = 200;
+    private static final String ACTIVE_SLIME_CMD_DEFAULT = "active";
     private static final List<String> ACTIVE_SLIME_CMD_COMMENTS = List.of("Default: " + ACTIVE_SLIME_CMD_DEFAULT);
 
     private static final String SLIME_CHUNK_MESSAGE_PATH = "slime-chunk-message";
     private static final String SLIME_CHUNK_MESSAGE_DEFAULT =
-        "<gray>This chunk </gray>" + CHUNK_STATUS_PLACEHOLDER + "<gray> a Slime chunk";
+        "<gray>This chunk </gray><" + CHUNK_STATUS_PLACEHOLDER + "><gray> a Slime chunk";
     private static final List<String> SLIME_CHUNK_MESSAGE_COMMENTS = List.of(
         "Message used in /slime_chunk command.",
         "You can use the <chunk-status> placeholder in the message to display the status of the chunk.",
@@ -114,7 +117,7 @@ public class PluginConfig {
         "List of animation frames for slimes in buckets.",
         "Each frame is a name of a sound to play. If the frame should not play a sound, use an empty string value.",
         ANIMATION_FRAMES_DEFAULT.stream()
-            .map(o -> o.map(Enum::name).orElse("''"))
+            .map(o -> o.map(sound -> sound.getKey().toString()).orElse("''"))
             .collect(Collectors.joining(", ", "Default: [", "]"))
     );
 
@@ -123,8 +126,8 @@ public class PluginConfig {
     private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
 
     private final @NotNull ConfigAccessor configAccessor;
-    private int calmSlimeCmd;
-    private int activeSlimeCmd;
+    private String calmSlimeCmd;
+    private String activeSlimeCmd;
     private Component slimeBucketTitle;
     private String slimeChunkMessage;
     private Component chunkStatusTrue;
@@ -148,8 +151,8 @@ public class PluginConfig {
     public void read() {
         final var config = configAccessor.getConfig();
 
-        calmSlimeCmd = config.getInt(CALM_SLIME_CMD_PATH, CALM_SLIME_CMD_DEFAULT);
-        activeSlimeCmd = config.getInt(ACTIVE_SLIME_CMD_PATH, ACTIVE_SLIME_CMD_DEFAULT);
+        calmSlimeCmd = config.getString(CALM_SLIME_CMD_PATH, CALM_SLIME_CMD_DEFAULT);
+        activeSlimeCmd = config.getString(ACTIVE_SLIME_CMD_PATH, ACTIVE_SLIME_CMD_DEFAULT);
         slimeBucketTitle = MINI_MESSAGE.deserialize(config.getString(BUCKET_TITLE_PATH, BUCKET_TITLE_DEFAULT));
         slimeChunkMessage = config.getString(SLIME_CHUNK_MESSAGE_PATH, SLIME_CHUNK_MESSAGE_DEFAULT);
         chunkStatusTrue = MINI_MESSAGE.deserialize(config.getString(CHUNK_STATUS_TRUE_PATH, CHUNK_STATUS_TRUE_DEFAULT));
@@ -160,9 +163,13 @@ public class PluginConfig {
         soundVolume = (float) config.getDouble(SOUND_VOLUME_PATH, SOUND_VOLUME_DEFAULT);
         soundPitch = (float) config.getDouble(SOUND_PITCH_PATH, SOUND_PITCH_DEFAULT);
         animationFrametime = config.getInt(ANIMATION_FRAMETIME_PATH, ANIMATION_FRAMETIME_DEFAULT);
-        animationFrames = config.getStringList(ANIMATION_FRAMES_PATH).stream()
-            .map(s -> s.isBlank() ? Optional.<Sound>empty() : Optional.of(Sound.valueOf(s)))
-            .collect(Collectors.toList());
+        animationFrames = new ArrayList<>(config.getStringList(ANIMATION_FRAMES_PATH).stream()
+            .map(s -> {
+                if (s.isBlank()) return Optional.<Sound>empty();
+                Sound sound = Registry.SOUNDS.get(NamespacedKey.fromString(s.toLowerCase()));
+                return sound != null ? Optional.of(sound) : Optional.<Sound>empty();
+            })
+            .collect(Collectors.toList()));
         if (animationFrames.isEmpty()) {
             animationFrames = ANIMATION_FRAMES_DEFAULT;
         }
@@ -212,7 +219,7 @@ public class PluginConfig {
 
         config.set(
             ANIMATION_FRAMES_PATH, animationFrames.stream()
-                .map(o -> o.map(Enum::name).orElse(""))
+                .map(o -> o.map(sound -> sound.getKey().toString()).orElse(""))
                 .collect(Collectors.toList())
         );
         config.setComments(ANIMATION_FRAMES_PATH, ANIMATION_FRAMES_COMMENTS);
@@ -223,11 +230,11 @@ public class PluginConfig {
         configAccessor.saveConfig();
     }
 
-    public int getCalmSlimeCmd() {
+    public @NotNull String getCalmSlimeCmd() {
         return calmSlimeCmd;
     }
 
-    public int getActiveSlimeCmd() {
+    public @NotNull String getActiveSlimeCmd() {
         return activeSlimeCmd;
     }
 
